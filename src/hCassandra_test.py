@@ -1,5 +1,9 @@
 __author__ = 'annyz'
 
+from sys import path
+# Append 'hydra' directory to Python path
+path.append("hydra/src/main/python")
+
 import sys
 import logging
 import math
@@ -26,7 +30,8 @@ class RunTestCassandra(HydraBase):
     def __init__(self, options, runtest=True, mock=False):
         self.options = options
         self.config = ConfigParser()
-        HydraBase.__init__(self, 'CassandraStressTest', self.options, self.config, startappserver=runtest, mock=mock)
+        HydraBase.__init__(self, 'CassandraStressTest', self.options, self.config, startappserver=runtest, mock=mock,
+                           app_dirs=['src', 'hydra'])
         self.stress_client = '/stress-client'
         self.add_appid(self.stress_client)
         if runtest:
@@ -119,22 +124,19 @@ class RunTestCassandra(HydraBase):
     def launch_stress_client(self):
         max_threads_per_client = 10
         l.info("Launching the Cassandra Stress Client(s). Total clients = %s" % (self.options.total_client_count))
-        constraints = []    # no constraints defined for cassandra stress-clients
         # Determine number of threads per Cassandra Stress Client
         if self.options.total_client_count > max_threads_per_client:
             threads_per_client = max_threads_per_client
         else:
             threads_per_client = self.options.total_client_count
         l.debug("Number of Threads per Cassandra-Stress Client, set to: %s" % (threads_per_client))
-        self.create_hydra_app(name=self.stress_client, app_path='hydra.cassandra.stress_client.run',
-                              app_args='%s %s %s %s %s' % (self.options.total_ops_count,
-                                                           threads_per_client,
-                                                           self.options.cluster_ips,
-                                                           self.options.cl,
-                                                           self.options.profile),
-                              cpus=0.01, mem=32,
-                              ports=[0],
-                              constraints=constraints)
+        self.create_binary_app(name=self.stress_client, app_script='./src/stress_client.py %s %s %s %s %s'
+                                                                   % (self.options.total_ops_count,
+                                                                      threads_per_client,
+                                                                      self.options.cluster_ips,
+                                                                      self.options.cl,
+                                                                      self.options.profile),
+                               cpus=0.01, mem=32, ports=[0])
         if self.options.total_client_count > max_threads_per_client:
             client_count = math.ceil(self.options.total_client_count / 10)
             l.info("Number of Cassandra-Stress Clients to launch = %s" % (client_count))
@@ -178,4 +180,4 @@ class RunTest(object):
         r.stop_appserver()
 
 if __name__ == "__main__":
-    RunTest()
+    RunTest(sys.argv)
