@@ -9,6 +9,7 @@ import sys
 import logging
 import math
 import ast
+import copy
 
 from datetime import datetime, timedelta
 from optparse import OptionParser
@@ -96,8 +97,8 @@ class RunTestCassandra(HydraBase):
             'op_time': []        # Total Operation Time per client
         }
         cassandra_results = {
-            'write': dict(result),
-            'read': dict(result)
+            'write': copy.deepcopy(result),
+            'read': copy.deepcopy(result)
         }
         # Get stats for Cassandra Stress Client
         stats = self.get_app_stats(self.stress_client)
@@ -177,7 +178,7 @@ class RunTest(object):
         res = r.run_test()
         r.delete_all_launched_apps()
         # Cassandra-Stress Test Results
-        l.info("Cassandra Stress Results: \n%s" % pformat(res))
+        print("Cassandra Stress Results: \n%s" % pformat(res))
         r.stop_appserver()
 
 if __name__ == "__main__":
