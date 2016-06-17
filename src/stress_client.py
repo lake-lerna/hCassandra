@@ -1,4 +1,9 @@
+#!/usr/bin/env python
 __author__ = 'annyz'
+
+from sys import path
+# Append 'hydra' directory to Python path
+path.append("hydra/src/main/python")
 
 import logging
 import os
@@ -87,6 +92,38 @@ def time_to_start(run_data):
                                   }
     run_data['stats']['read'] = {}
     return
+
+
+def parse_results(stdout, run_data):
+    try:
+        l.info('Start parsing cassandra-stress output.')
+        index_start = stdout.find('op rate')
+        index_end = stdout.find('END')
+        if (index_start and index_end) != -1:
+            results = stdout[index_start:index_end]
+            # find 'matches' of the type att_name:value
+            matches = re.findall(r'.+\:{1}.+', results)
+            # partition each match at ':'
+            matches = [m.split(':', 1) for m in matches]
+            # Remove extra whitespaces
+            for pair in matches:
+                for idx, m in enumerate(pair):
+                    pair[idx] = re.sub(r'\s{2,}', '', m)
+            # Build dictionary of results
+            result_dict = dict(matches)
+            run_data.update(result_dict)
+    except Exception, e:
+        l.error("ERROR while parsing Cassandra-Stress OUTPUT. Error: %s" % str(e))
+
+
+def check_user_queries(data_profile):
+    """
+    Check if 'user' queries are defined in YAML Profile.
+    :param data_profile: .yaml profile
+    :return: True if custom user queries are defined in profile, otherwise, False
+    """
+    # TODO: Analyze 'profile' and set 'user_queries'
+    return False
 
 
 def run(argv):
@@ -189,35 +226,3 @@ def run(argv):
 
 if __name__ == "__main__":
     run(sys.argv)
-
-
-def parse_results(stdout, run_data):
-    try:
-        l.info('Start parsing cassandra-stress output.')
-        index_start = stdout.find('op rate')
-        index_end = stdout.find('END')
-        if (index_start and index_end) != -1:
-            results = stdout[index_start:index_end]
-            # find 'matches' of the type att_name:value
-            matches = re.findall(r'.+\:{1}.+', results)
-            # partition each match at ':'
-            matches = [m.split(':', 1) for m in matches]
-            # Remove extra whitespaces
-            for pair in matches:
-                for idx, m in enumerate(pair):
-                    pair[idx] = re.sub(r'\s{2,}', '', m)
-            # Build dictionary of results
-            result_dict = dict(matches)
-            run_data.update(result_dict)
-    except Exception, e:
-        l.error("ERROR while parsing Cassandra-Stress OUTPUT. Error: %s" % str(e))
-
-
-def check_user_queries(data_profile):
-    """
-    Check if 'user' queries are defined in YAML Profile.
-    :param data_profile: .yaml profile
-    :return: True if custom user queries are defined in profile, otherwise, False
-    """
-    # TODO: Analyze 'profile' and set 'user_queries'
-    return False
