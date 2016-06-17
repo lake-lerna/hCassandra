@@ -10,7 +10,7 @@ from optparse import OptionParser
 from pprint import pformat  # NOQA
 from hydra.lib import util
 from hydra.lib.h_analyser import HAnalyser
-from hydra.lib.runtestbase import RunTestBase
+from hydra.lib.hydrabase import HydraBase
 
 try:
     # Python 2.x
@@ -19,14 +19,14 @@ except ImportError:
     # Python 3.x
     from configparser import ConfigParser
 
-l = util.createlogger('cass_runTest', logging.DEBUG)
+l = util.createlogger('hCassandra', logging.DEBUG)
 
 
-class RunTestCassandra(RunTestBase):
+class RunTestCassandra(HydraBase):
     def __init__(self, options, runtest=True, mock=False):
         self.options = options
         self.config = ConfigParser()
-        RunTestBase.__init__(self, 'CassandraStressTest', self.options, self.config, startappserver=runtest, mock=mock)
+        HydraBase.__init__(self, 'CassandraStressTest', self.options, self.config, startappserver=runtest, mock=mock)
         self.stress_client = '/stress-client'
         self.add_appid(self.stress_client)
         if runtest:
@@ -140,17 +140,6 @@ class RunTestCassandra(RunTestBase):
             l.info("Number of Cassandra-Stress Clients to launch = %s" % (client_count))
             self.scale_and_verify_app(self.stress_client, client_count)
 
-        ipm = self.get_app_ipport_map(self.stress_client)
-        # TODO: THIS WILL BE AN ARRAY OF CLIENT IPs
-        self.client_ip = ipm.values()[0][1]
-        self.client_rep_taskport = str(ipm.values()[0][0])
-
-        l.info("Cassandra Stress Client running at [%s]", self.client_ip)
-        l.info("Cassandra Stress Client - (HDaemon) REP Server running at [%s:%s]", self.client_ip, self.client_rep_taskport)
-
-        # Initialize CassandraAnalyser (to control & collect stats from test instances)
-
-        # self.ha_stress_client = HAnalyser(self.client_ip, self.client_rep_taskport, ipm.keys()[0])
 
     def delete_all_launched_apps(self):
         l.info("Deleting Stress Clients")
@@ -187,3 +176,6 @@ class RunTest(object):
         # Cassandra-Stress Test Results
         l.info("Cassandra Stress Results: \n%s" % pformat(res))
         r.stop_appserver()
+
+if __name__ == "__main__":
+    RunTest()

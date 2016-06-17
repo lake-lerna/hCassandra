@@ -7,6 +7,7 @@ import json
 import time
 import subprocess
 import re
+import sys
 
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -185,6 +186,9 @@ def run(argv):
         hd.run_data['msg_cnt'] = ops_count
         l.info('Cassandra Stress Test COMPLETED.')
         break
+
+if __name__ == "__main__":
+    run(sys.argv)
 
 
 def parse_results(stdout, run_data):
