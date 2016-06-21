@@ -10,6 +10,7 @@ import logging
 import math
 import ast
 import copy
+import json
 
 from datetime import datetime, timedelta
 from optparse import OptionParser
@@ -17,6 +18,7 @@ from pprint import pformat  # NOQA
 from hydra.lib import util
 from hydra.lib.h_analyser import HAnalyser
 from hydra.lib.hydrabase import HydraBase
+from cassandra.cluster import Cluster
 
 try:
     # Python 2.x
@@ -68,12 +70,26 @@ class RunTestCassandra(HydraBase):
     def run_test(self, first_run=True):
         # Get Mesos/Marathon Clients
         self.start_init()
+        # Reset (drop) Cassandra DB for cassandra-stress tool default 'keyspace'
+        self.reset_db()
         # Launch Cassandra Stress-Client(s)
         self.launch_stress_client()
         # Rerun the test
         res = self.rerun_test(self.options)
         # Return Test Results
         return res
+
+    def reset_db(self):
+        try:
+            ips = self.options.cluster_ips.split(',')
+            cluster = Cluster(ips)
+            l.debug("Connecting to Cassandra Cluster: [%s]" % (ips))
+            session = cluster.connect()
+            l.info("dropping [keyspace1] (default) keyspace...")
+            session.execute("DROP KEYSPACE keyspace1")
+            l.info('Succeeded to delete DB.')
+        except Exception as e:
+            l.error('Failed to reset Cassandra DB. Error: %s' % str(e))
 
     def stop_and_delete_all_apps(self):
         self.delete_all_launched_apps()
@@ -91,7 +107,7 @@ class RunTestCassandra(HydraBase):
             'max': [],           # Maximum latency in miliseconds.
             'gc_num': 0,         # Number of garbage collections.
             'max_ms': [],        # Longest garbage collection in miliseconds.
-            'sum_ms': 0,         # Total of gargage collection in miliseconds.
+            'sum_ms': 0,         # Total of garbage collection in miliseconds.
             'sdv_ms': [],        # Standard deviation in miliseconds.
             'mb': 0,             # Size of the garbage collection in megabytes.
             'op_time': []        # Total Operation Time per client
@@ -110,15 +126,15 @@ class RunTestCassandra(HydraBase):
             for db_op in db_ops:
                 if db_op in info:
                     info[db_op] = ast.literal_eval(info[db_op])
-                    cassandra_results[db_op]['total ops'].append(info[db_op]['Total partitions'])
-                    cassandra_results[db_op]['op/s'].append(info[db_op]['op rate'])
-                    cassandra_results[db_op]['pk/s'].append(info[db_op]['partition rate'])
-                    cassandra_results[db_op]['.95'].append(info[db_op]['latency 95th percentile'])
-                    cassandra_results[db_op]['.99'].append(info[db_op]['latency 99th percentile'])
+                    cassandra_results[db_op]['total ops'].append(int(info[db_op]['Total partitions']))
+                    cassandra_results[db_op]['op/s'].append(int(info[db_op]['op rate']))
+                    cassandra_results[db_op]['pk/s'].append(int(info[db_op]['partition rate']))
+                    cassandra_results[db_op]['.95'].append(float(info[db_op]['latency 95th percentile']))
+                    cassandra_results[db_op]['.99'].append(float(info[db_op]['latency 99th percentile']))
                     cassandra_results[db_op]['gc_num'] += int(info[db_op]['total gc count'])
-                    cassandra_results[db_op]['sdv_ms'].append(info[db_op]['stdev gc time(ms)'])
-                    cassandra_results[db_op]['max'].append(info[db_op]['latency max'])
-                    cassandra_results[db_op]['med'].append(info[db_op]['latency median'])
+                    cassandra_results[db_op]['sdv_ms'].append(float(info[db_op]['stdev gc time(ms)']))
+                    cassandra_results[db_op]['max'].append(float(info[db_op]['latency max']))
+                    cassandra_results[db_op]['med'].append(float(info[db_op]['latency median']))
                     cassandra_results[db_op]['op_time'].append(info[db_op]['Total operation time'])
 
         return cassandra_results
@@ -178,7 +194,8 @@ class RunTest(object):
         res = r.run_test()
         r.delete_all_launched_apps()
         # Cassandra-Stress Test Results
-        print("Cassandra Stress Results: \n%s" % pformat(res))
+        result_json = json.dumps(res)
+        print("Cassandra Stress Results: \n%s" % pformat(result_json))
         r.stop_appserver()
 
 if __name__ == "__main__":

@@ -111,6 +111,9 @@ def parse_results(stdout, run_data):
                     pair[idx] = re.sub(r'\s{2,}', '', m)
             # Build dictionary of results
             result_dict = dict(matches)
+            # Remove [] in results
+            for key, value in result_dict.iteritems():
+                result_dict[key] = re.sub(r'\[{1}.{1,}\]{1}', '', value)
             run_data.update(result_dict)
     except Exception, e:
         l.error("ERROR while parsing Cassandra-Stress OUTPUT. Error: %s" % str(e))
