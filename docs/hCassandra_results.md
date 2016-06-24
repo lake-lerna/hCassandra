@@ -362,11 +362,10 @@ py.iplot(fig, filename = ops_second_graph_filename)
     A true SSLContext object is not available. This prevents urllib3 from configuring SSL appropriately and may cause certain SSL connections to fail. You can upgrade to a newer version of Python to solve this. For more information, see https://urllib3.readthedocs.org/en/latest/security.html#insecureplatformwarning.
     
 
-
-
-
-
-<iframe id="igraph" scrolling="no" style="border:none;" seamless="seamless" src="https://plot.ly/~anny.martinez/57.embed" height="525px" width="100%"></iframe>
+<div>
+    <a href="https://plot.ly/~anny.martinez/61/" target="_blank" title="op/s vs. # Clients" style="display: block; text-align: center;"><img src="https://plot.ly/~anny.martinez/61.png" alt="op/s vs. # Clients" style="max-width: 100%;width: 1030px;"  width="1030" onerror="this.onerror=null;this.src='https://plot.ly/404.png';" /></a>
+    <script data-plotly="anny.martinez:61"  src="https://plot.ly/embed.js" async></script>
+</div>
 
 
 
@@ -394,10 +393,10 @@ py.iplot(fig, filename = median_latency_graph_filename)
     
 
 
-
-
-
-<iframe id="igraph" scrolling="no" style="border:none;" seamless="seamless" src="https://plot.ly/~anny.martinez/59.embed" height="525px" width="100%"></iframe>
+<div>
+    <a href="https://plot.ly/~anny.martinez/63/" target="_blank" title="Median Latency vs. Client Count" style="display: block; text-align: center;"><img src="https://plot.ly/~anny.martinez/63.png" alt="Median Latency vs. Client Count" style="max-width: 100%;width: 1030px;"  width="1030" onerror="this.onerror=null;this.src='https://plot.ly/404.png';" /></a>
+    <script data-plotly="anny.martinez:63"  src="https://plot.ly/embed.js" async></script>
+</div>
 
 
 
