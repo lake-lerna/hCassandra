@@ -47,8 +47,8 @@ class RunTestCassandra(HydraBase):
         self.reset_all_app_stats(self.stress_client)
         # Signal message sending
         l.info("Sending signal to Cassandra Stress client to start sending all messages..")
-        # Force start-time for ALL clients +10 seconds from current time
-        start_time = datetime.now() + timedelta(seconds=10)
+        # Force start-time for ALL clients +60 seconds from current time
+        start_time = datetime.now() + timedelta(seconds=60)
         l.debug("Current Time: %s, Start Time: %s" % (datetime.now(), start_time))
         task_list = self.all_task_ids[self.stress_client]
         ha_list = []
@@ -61,8 +61,10 @@ class RunTestCassandra(HydraBase):
             ha_stress.start_test(start_time=start_time)
             ha_list.append(ha_stress)
         l.info('Waiting for test(s) to end...')
-        for ha_stress in ha_list:
+        for idx, ha_stress in enumerate(ha_list):
+            l.debug('Waiting for task [%s] in [%s:%s] test to END. Iteration: %s' % (ha_stress.task_id, ha_stress.server_ip, ha_stress.port, idx))
             ha_stress.wait_for_testend()
+        l.info('Fetch App Stats')
         self.fetch_app_stats(self.stress_client)
 
         return self.result_parser()
@@ -122,25 +124,28 @@ class RunTestCassandra(HydraBase):
         db_ops = ['write', 'read']
         for client in stats.keys():
             info = stats[client]
-            # l.info(" CLIENT = " + pformat(client) + " DATA = " + pformat(info))
             for db_op in db_ops:
                 if db_op in info:
-                    info[db_op] = ast.literal_eval(info[db_op])
-                    cassandra_results[db_op]['total ops'].append(int(info[db_op]['Total partitions']))
-                    cassandra_results[db_op]['op/s'].append(int(info[db_op]['op rate']))
-                    cassandra_results[db_op]['pk/s'].append(int(info[db_op]['partition rate']))
-                    cassandra_results[db_op]['.95'].append(float(info[db_op]['latency 95th percentile']))
-                    cassandra_results[db_op]['.99'].append(float(info[db_op]['latency 99th percentile']))
-                    cassandra_results[db_op]['gc_num'] += int(info[db_op]['total gc count'])
-                    cassandra_results[db_op]['sdv_ms'].append(float(info[db_op]['stdev gc time(ms)']))
-                    cassandra_results[db_op]['max'].append(float(info[db_op]['latency max']))
-                    cassandra_results[db_op]['med'].append(float(info[db_op]['latency median']))
-                    cassandra_results[db_op]['op_time'].append(info[db_op]['Total operation time'])
+                    try:
+                        info[db_op] = ast.literal_eval(info[db_op])
+                        cassandra_results[db_op]['total ops'].append(int(info[db_op]['Total partitions']))
+                        cassandra_results[db_op]['op/s'].append(int(info[db_op]['op rate']))
+                        cassandra_results[db_op]['pk/s'].append(int(info[db_op]['partition rate']))
+                        cassandra_results[db_op]['.95'].append(float(info[db_op]['latency 95th percentile']))
+                        cassandra_results[db_op]['.99'].append(float(info[db_op]['latency 99th percentile']))
+                        cassandra_results[db_op]['gc_num'] += int(info[db_op]['total gc count'])
+                        cassandra_results[db_op]['sdv_ms'].append(float(info[db_op]['stdev gc time(ms)']))
+                        cassandra_results[db_op]['max'].append(float(info[db_op]['latency max']))
+                        cassandra_results[db_op]['med'].append(float(info[db_op]['latency median']))
+                        cassandra_results[db_op]['op_time'].append((info[db_op]['Total operation time']).replace(' ', ''))
+                    except Exception as e:
+                        l.error("Failed to parse stats from Client: " + pformat(client) + " DATA = " + pformat(info[db_op]))
+                        l.error("ERROR: %s" % str(e))
 
         return cassandra_results
 
     def launch_stress_client(self):
-        max_threads_per_client = 10
+        max_threads_per_client = 20
         l.info("Launching the Cassandra Stress Client(s). Total clients = %s" % (self.options.total_client_count))
         # Determine number of threads per Cassandra Stress Client
         if self.options.total_client_count > max_threads_per_client:
@@ -154,9 +159,9 @@ class RunTestCassandra(HydraBase):
                                                                       self.options.cluster_ips,
                                                                       self.options.cl,
                                                                       self.options.profile),
-                               cpus=0.01, mem=32, ports=[0])
+                               cpus=0.2, mem=600, ports=[0])
         if self.options.total_client_count > max_threads_per_client:
-            client_count = math.ceil(self.options.total_client_count / 10)
+            client_count = math.ceil(self.options.total_client_count / max_threads_per_client)
             l.info("Number of Cassandra-Stress Clients to launch = %s" % (client_count))
             self.scale_and_verify_app(self.stress_client, client_count)
 

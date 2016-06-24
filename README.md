@@ -147,7 +147,7 @@ To automatically run the tests for a given set of clients use the IPython Notebo
 Next, to run the notebook execute from ~/hCassandra:
 
 ```
-  jupyter notebook
+$  jupyter notebook
 ```
 
 The Jupyter Notebook is running at: http://localhost:8888/, open in a browser and follow instructions in the notebook.

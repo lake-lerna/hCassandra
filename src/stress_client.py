@@ -13,6 +13,7 @@ import time
 import subprocess
 import re
 import sys
+import signal
 
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -44,11 +45,15 @@ class HDCStressRepSrv(HDaemonRepSrv):
         """
         l.info('Scheduling Test to start %s.' % (start_time))
         start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f")
-        test_scheduler = BackgroundScheduler()
-        test_scheduler.add_job(lambda: time_to_start(self.run_data), next_run_time=start_time)
-        test_scheduler.start()
         self.run_data['test_status'] = 'running'
         self.run_data['stats']['msg_cnt'] = self.stress_metrics['ops_count']
+        # If time to start has passed, start immediately
+        if start_time < datetime.now():
+            time_to_start(self.run_data)
+        else:
+            test_scheduler = BackgroundScheduler()
+            test_scheduler.add_job(lambda: time_to_start(self.run_data), next_run_time=start_time)
+            test_scheduler.start()
         # Report Status
         return ('ok', None)
 
@@ -169,8 +174,8 @@ def run(argv):
 
         # The cluster must be first populated by a 'write' test
         w_start_time = time.time()              # write 'start' time
-        base_cmd = 'cassandra-stress %s n=%s -rate threads=%s -node %s'
-        write_cmd = base_cmd % ('write', ops_count, client_count,
+        base_cmd = 'cassandra-stress %s duration=%sm -rate threads=%s -node %s'
+        write_cmd = base_cmd % ('write', '5', client_count,
                                 cluster_ips)
 
         # Initiate Subprocess Call (WRITE OPERATION)
@@ -187,19 +192,19 @@ def run(argv):
         # Write stats to 'run_data'
         hd.run_data['stats']['write']['time:start'] = json.dumps(w_start_time)
         hd.run_data['stats']['write']['time:end'] = json.dumps(time.time())
-        parse_results(stdout_w, hd.run_data['stats']['write'])
-        l.debug("Updated RUN_DATA: \n%s" % pformat(hd.run_data))
         process = psutil.Process()
         hd.run_data['stats']['write']['net:end'] = json.dumps(psutil.net_io_counters())
         hd.run_data['stats']['write']['cpu:end'] = json.dumps(process.cpu_times())
         hd.run_data['stats']['write']['mem:end'] = json.dumps(process.memory_info())
+        parse_results(stdout_w, hd.run_data['stats']['write'])
+        l.debug("Updated RUN_DATA: \n%s" % pformat(hd.run_data))
 
         # Initiate Subprocess Call (READ/QUERY OPERATION)
         if not user_queries:
-            query_cmd = base_cmd % ('read', ops_count, client_count,
+            query_cmd = base_cmd % ('read', '2', client_count,
                                     cluster_ips)
         else:
-            query_cmd = base_cmd % ('user', ops_count, client_count,
+            query_cmd = base_cmd % ('user', '2', client_count,
                                     cluster_ips)
             query_cmd += 'profile=%s' % (stress_profile)
 
@@ -217,10 +222,10 @@ def run(argv):
         # Write stats to 'run_data'
         hd.run_data['stats']['read']['time:start'] = json.dumps(q_start_time)
         hd.run_data['stats']['read']['time:end'] = json.dumps(time.time())
-        parse_results(stdout_q, hd.run_data['stats']['read'])
         hd.run_data['stats']['read']['net:end'] = json.dumps(psutil.net_io_counters())
         hd.run_data['stats']['read']['cpu:end'] = json.dumps(process.cpu_times())
         hd.run_data['stats']['read']['mem:end'] = json.dumps(process.memory_info())
+        parse_results(stdout_q, hd.run_data['stats']['read'])
         hd.run_data['test_status'] = 'stopping'
         hd.run_data['start'] = False
         hd.run_data['msg_cnt'] = ops_count
