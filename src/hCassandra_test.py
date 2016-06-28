@@ -153,10 +153,11 @@ class RunTestCassandra(HydraBase):
         else:
             threads_per_client = self.options.total_client_count
         l.debug("Number of Threads per Cassandra-Stress Client, set to: %s" % (threads_per_client))
-        self.create_binary_app(name=self.stress_client, app_script='./src/stress_client.py %s %s %s %s %s'
+        self.create_binary_app(name=self.stress_client, app_script='./src/stress_client.py %s %s %s %s %s %s'
                                                                    % (self.options.total_ops_count,
                                                                       threads_per_client,
                                                                       self.options.cluster_ips,
+                                                                      self.options.test_duration,
                                                                       self.options.cl,
                                                                       self.options.profile),
                                cpus=0.2, mem=600, ports=[0])
@@ -179,7 +180,7 @@ class RunTest(object):
                  '--config_file=<path_to_config_file>')
         parser = OptionParser(description='cassandra scale test master',
                               version="0.1", usage=usage)
-        parser.add_option("--test_duration", dest='test_duration', type='float', default=10)
+        parser.add_option("--test_duration", dest='test_duration', type='int', default=5)
         parser.add_option("--total_ops_count", dest='total_ops_count', type='int', default=1000000)
         parser.add_option("--total_client_count", dest='total_client_count', type='int', default=20)
         parser.add_option("--cluster_ips", dest='cluster_ips', type='string', default='127.0.0.1')

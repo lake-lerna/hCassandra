@@ -87,15 +87,8 @@ class HDCStressRepSrv(HDaemonRepSrv):
 
 def time_to_start(run_data):
     l.info('Starting Cassandra Stress Test at: %s' % (datetime.utcnow()))
-    process = psutil.Process()
     # Initialize test data collection
     run_data['start'] = True
-    run_data['stats']['write'] = {'net:start': json.dumps(psutil.net_io_counters()),
-                                  'cpu:start': json.dumps(process.cpu_times()),
-                                  'mem:start': json.dumps(process.memory_info()),
-                                  'time:start': json.dumps(time.time())
-                                  }
-    run_data['stats']['read'] = {}
     return
 
 
@@ -142,13 +135,14 @@ def run(argv):
     user_queries = False
 
     # Parse Inputs
-    if len(argv) > 5:
+    if len(argv) >= 6:
         ops_count = argv[1]             # number of Operations (e.g., n=1000000 insert/read one million rows)
         client_count = argv[2]          # client count (client threads)
         cluster_ips = argv[3]           # C*-Cluster IPs
-        # consistency_level = argv[4]     # consistency level, default='LOCAL_ONE'
-    if len(argv) > 6:
-        stress_profile = argv[4]        # (optional) .yaml profile (defines data model & queries)
+        duration = argv[4]
+        consistency_level = argv[5]     # consistency level, default='LOCAL_ONE'
+    if len(argv) >= 7:
+        stress_profile = argv[6]        # (optional) .yaml profile (defines data model & queries)
         user_queries = check_user_queries(stress_profile)
 
     # Initialize 'run_data'
@@ -172,10 +166,16 @@ def run(argv):
             continue
         l.info("START SIGNAL received. Cassandra Client initiating Stress Test...")
 
+        process = psutil.Process()
+        hd.run_data['stats']['write'] = {'net:start': json.dumps(psutil.net_io_counters()),
+                                         'cpu:start': json.dumps(process.cpu_times()),
+                                         'mem:start': json.dumps(process.memory_info()),
+                                         'time:start': json.dumps(time.time())
+                                        }
+
         # The cluster must be first populated by a 'write' test
-        w_start_time = time.time()              # write 'start' time
         base_cmd = 'cassandra-stress %s duration=%sm -rate threads=%s -node %s'
-        write_cmd = base_cmd % ('write', '5', client_count,
+        write_cmd = base_cmd % ('write', duration, client_count,
                                 cluster_ips)
 
         # Initiate Subprocess Call (WRITE OPERATION)
@@ -190,9 +190,7 @@ def run(argv):
         l.debug('stderr of Cassandra-Stress Test WRITE operation: %s' % (stderr_w))
 
         # Write stats to 'run_data'
-        hd.run_data['stats']['write']['time:start'] = json.dumps(w_start_time)
         hd.run_data['stats']['write']['time:end'] = json.dumps(time.time())
-        process = psutil.Process()
         hd.run_data['stats']['write']['net:end'] = json.dumps(psutil.net_io_counters())
         hd.run_data['stats']['write']['cpu:end'] = json.dumps(process.cpu_times())
         hd.run_data['stats']['write']['mem:end'] = json.dumps(process.memory_info())
@@ -201,13 +199,14 @@ def run(argv):
 
         # Initiate Subprocess Call (READ/QUERY OPERATION)
         if not user_queries:
-            query_cmd = base_cmd % ('read', '2', client_count,
+            query_cmd = base_cmd % ('read', duration, client_count,
                                     cluster_ips)
         else:
-            query_cmd = base_cmd % ('user', '2', client_count,
+            query_cmd = base_cmd % ('user', duration, client_count,
                                     cluster_ips)
             query_cmd += 'profile=%s' % (stress_profile)
 
+        hd.run_data['stats']['read'] = {}
         q_start_time = time.time()
         l.debug('Execute command: %s' % (query_cmd))
         stress_process = subprocess.Popen(query_cmd, stdout=subprocess.PIPE,
