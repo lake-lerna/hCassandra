@@ -74,12 +74,60 @@ class RunTestCassandra(HydraBase):
         self.start_init()
         # Reset (drop) Cassandra DB for cassandra-stress tool default 'keyspace'
         self.reset_db()
+        # Create Table(s) & Triggers for stress Test
+        # self.create_triggers()
         # Launch Cassandra Stress-Client(s)
         self.launch_stress_client()
         # Rerun the test
         res = self.rerun_test(self.options)
         # Return Test Results
         return res
+
+    def create_triggers(self):
+        try:
+            cluster_ips = self.options.cluster_ips.split(',')
+            cluster = Cluster(cluster_ips)
+            l.debug("Connecting to Cassandra Cluster: [%s]" % (cluster_ips))
+            session = cluster.connect()
+            l.info("Create keyspace [keyspace1]...")
+            # Create Keyspace
+            session.execute("CREATE KEYSPACE keyspace1 WITH replication = {'class': 'SimpleStrategy', "
+                            "'replication_factor': '1'}  AND durable_writes = true;")
+            l.info("Create tables [standard1] & [counter1]...")
+            table_create = "CREATE TABLE keyspace1.standard1 ( " \
+                           "key blob PRIMARY KEY," \
+                            "\"C0\" blob," \
+                            "\"C1\" blob," \
+                            "\"C2\" blob," \
+                            "\"C3\" blob," \
+                            "\"C3\" blob" \
+                            ") WITH COMPACT STORAGE" \
+                            "AND bloom_filter_fp_chance = 0.01" \
+                            "AND caching = {'keys': 'ALL', 'rows_per_partition': 'NONE'}" \
+                            "AND comment = ''" \
+                            "AND compaction = {'class': " \
+                            "'org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy', 'max_threshold': '32'," \
+                            " 'min_threshold': '4'}" \
+                            "AND compression = {'enabled': 'false'}" \
+                            "AND crc_check_chance = 1.0" \
+                            "AND dclocal_read_repair_chance = 0.1" \
+                            "AND default_time_to_live = 0" \
+                            "AND gc_grace_seconds = 864000" \
+                            "AND max_index_interval = 2048" \
+                            "AND memtable_flush_period_in_ms = 0" \
+                            "AND min_index_interval = 128" \
+                            "AND read_repair_chance = 0.0" \
+                            "AND speculative_retry = '99PERCENTILE';"
+            l.info("Create standard1 Table")
+            # Create 'standard1' & 'counter1' default Tables
+            session.execute(table_create)
+            l.info('Succeeded to create keyspace1 and standard1 Table.')
+            # Create Trigger
+            trigger_jar = 'org.apache.cassandra.triggers.AuditTrigger'
+            trigger_cql = "CREATE TRIGGER pushTrigger ON keyspace1.standard1 USING " + trigger_jar
+            session.execute(trigger_cql)
+        except Exception as e:
+            l.error('FAILED to create trigger. Error: %s' % str(e))
 
     def reset_db(self):
         try:

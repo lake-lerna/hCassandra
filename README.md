@@ -1,7 +1,5 @@
 # hCassandra: <sub> *A Cassandra Stress Test*
 
-
-
 The **hCassandra** project holds a test case of the [Hydra](https://github.com/lake-lerna/hydra) Platform---a scale testing infra using Mesos and Marathon. **hCassandra** evaluates the performance of a Cassandra Cluster in an automated fashion. Overall, it automatically scales the number of clients writing and reading into the database (as per users specification), while providing stats and graphs along the run.
 
 **Disclaimer:** This is still *WORK IN PROGRESS* and will be progressively updated.
@@ -106,6 +104,39 @@ If a node in the cluster shows to be down (DN, when running `nodetool status` on
 
 ```
 
+**IMPROVING CASSANDRA PERFORMANCE**
+
+In order to improve Cassandra Performance here are some settings/configurations which have been accordingly adopted.
+
+- JAVA NATIVE ACCESS LIBRARY
+
+      # Install Java-Native-Access Library which can improve memory usage
+      $ sudo apt-get install libjna-java
+
+*Note*: Installing JNA can improve Cassandra memory usage. When installed and configured, Linux does not swap out the JVM, and thus avoids related performance issues.
+
+- RAISE FILE DESCRIPTORS LIMIT FOR CASSANDRA
+
+      $ sudo vim /etc/security/limits.conf
+      # Add the following lines in the end
+      * - nofile     1000000
+      * - memlock    unlimited
+      * - fsize      unlimited
+      * - data       unlimited
+      * - rss        unlimited
+      * - stack      unlimited
+      * - cpu        unlimited
+      * - nproc      unlimited
+      * - as         unlimited
+      * - locks      unlimited
+      * - sigpending unlimited
+      * - msgqueue   unlimited
+
+
+A very good reference on guidelines to tune/debug Cassandra is found in the following link:
+
+https://tobert.github.io/pages/als-cassandra-21-tuning-guide.html
+
 
 - **Cassandra-Tools**
 
@@ -161,7 +192,7 @@ $ jupyter notebook --generate-config
 # Open config File
 $ vim ~/.jupyter/jupyter_notebook_config.py
 
-# Uncomment and change the follwoing lines:
+# Uncomment and change the following lines:
 c.NotebookApp.ip = '*'
 # Set fixed port for server access
 c.NotebookApp.port = 8888

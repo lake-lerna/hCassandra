@@ -13,7 +13,6 @@ import time
 import subprocess
 import re
 import sys
-import signal
 
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
