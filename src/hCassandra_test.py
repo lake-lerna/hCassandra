@@ -11,6 +11,10 @@ import math
 import ast
 import copy
 import json
+import threading
+import time
+import random
+import paramiko
 
 from datetime import datetime, timedelta
 from optparse import OptionParser
@@ -61,9 +65,21 @@ class RunTestCassandra(HydraBase):
             ha_stress.start_test(start_time=start_time)
             ha_list.append(ha_stress)
         l.info('Waiting for test(s) to end...')
+        if self.options.sim_failure:
+            l.debug("Simulate Cassandra Node Failure. Init.")
+            # Thread Event to indicate tests have been completed
+            tests_completed = threading.Event()
+            # Launch parallel Thread to simulate cassandra node failure.
+            l.debug("Launch separate thread to simulate node failure and rejoin.")
+            failure_thread = threading.Thread(target=simulate_node_failure, args=(self.options.cluster_ips.split(','),
+                                                                 self.options.test_duration, tests_completed))
+            failure_thread.start()
         for idx, ha_stress in enumerate(ha_list):
             l.debug('Waiting for task [%s] in [%s:%s] test to END. Iteration: %s' % (ha_stress.task_id, ha_stress.server_ip, ha_stress.port, idx))
             ha_stress.wait_for_testend()
+        if self.options.sim_failure:
+            l.debug("ALL tests are COMPLETED.")
+            tests_completed.set()
         l.info('Fetch App Stats')
         self.fetch_app_stats(self.stress_client)
 
@@ -214,18 +230,76 @@ class RunTestCassandra(HydraBase):
             l.info("Number of Cassandra-Stress Clients to launch = %s" % (client_count))
             self.scale_and_verify_app(self.stress_client, client_count)
 
-
     def delete_all_launched_apps(self):
         l.info("Deleting Stress Clients")
         self.delete_app(self.stress_client)
 
+
+def simulate_node_failure(node_ips, max_duration, tests_completed):
+    """
+        Simulate random cassandra node failure and 'rejoin' into cluster
+    """
+    run = True
+    l.info("START Cassandra Node Failure Simulation. Entering.")
+    while run:
+        # If stress-tests are still running continue with node failure simulation
+        if not tests_completed.isSet():
+            # Select 'random' node from Cassandra Cluster
+            node_ip = select_random_node(node_ips)
+            # Determine delay before stopping cassandra node (to simulate failure / node down)
+            duration_secs = max_duration*60
+            time_next_stop = random.randint(1, duration_secs/4)
+            l.debug("STOP programmed in %s seconds" % time_next_stop)
+            # Wait
+            time.sleep(time_next_stop)
+            ssh_fail = False
+            # Stop Cassandra Node (simulate failure / stop the service)
+            stop_cmd = "sudo service cassandra stop"
+            l.debug("STOP Cassandra Node: %s"%node_ip)
+            try:
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(str(node_ip))
+                l.debug("[Simulate Cassandra Node Failure] Connected to host: %s" % node_ip)
+            except paramiko.AuthenticationException as e:
+                l.error("Authentication failed when connecting to %s. ERROR: %s" % (node_ip, e))
+                ssh_fail = True
+            except:
+                l.error("Could not SSH to %s, waiting for it to start" % node_ip)
+                ssh_fail = True
+            if not ssh_fail:
+                # Send the command to STOP cassandra node
+                ssh.exec_command(stop_cmd)
+                # Determine delay before starting cassandra node (to simulate rejoin to the cluster)
+                time_next_rejoin = random.randint(1, duration_secs/4)
+                l.debug("START programmed in %s seconds" % time_next_rejoin)
+                time.sleep(time_next_rejoin)
+                # Start Cassandra Node (simulate rejoin / start the service)
+                start_cmd = "sudo service cassandra start"
+                l.debug("START Cassandra Node: %s"%node_ip)
+                # Send the command (non-blocking)
+                ssh.exec_command(start_cmd)
+                # Disconnect from the host
+                l.debug("Closing SSH connection to host: %s" % node_ip)
+                ssh.close()
+                run=False
+        else:
+            # Tests Complete has been signaled
+            run=False
+            l.info("END node failure simulation. Exiting.")
+
+def select_random_node(cluster_ips):
+    """
+        Select a random cassandra node from a list of IPs
+    """
+    return random.choice(cluster_ips)
 
 class RunTest(object):
     def __init__(self, argv):
         usage = ('python %prog --test_duration=<time to run test> --total_ops_count=<Total Operations>'
                  '--total_client_count=<Total clients to launch> --cluster_ips=<cassandra node list ips>'
                  '--consistency_level=<cassandra consistency level> --profile=<yaml profile>'
-                 '--config_file=<path_to_config_file>')
+                 '--config_file=<path_to_config_file> --sim_failure=<simulate node failure>')
         parser = OptionParser(description='cassandra scale test master',
                               version="0.1", usage=usage)
         parser.add_option("--test_duration", dest='test_duration', type='int', default=5)
@@ -235,6 +309,8 @@ class RunTest(object):
         parser.add_option("--consistency_level", dest='cl', type='string', default='LOCAL_ONE')
         parser.add_option("--profile", dest='profile', type='string', default='hydra_profile.yaml')
         parser.add_option("--config_file", dest='config_file', type='string', default='hydra.ini')
+        parser.add_option("--sim_failure", dest='sim_failure', action="store_true", default=False)
+
 
         (options, args) = parser.parse_args()
         # Check NO list of positional arguments leftover after parsing options
