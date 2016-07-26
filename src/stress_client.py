@@ -173,8 +173,8 @@ def run(argv):
                                         }
 
         # The cluster must be first populated by a 'write' test
-        base_cmd = 'cassandra-stress %s duration=%sm -rate threads=%s -node %s -schema "replication(factor=2)"'
-        write_cmd = base_cmd % ('write', duration, client_count,
+        base_cmd = 'cassandra-stress %s cl=%s duration=%sm -rate threads=%s -node %s -schema "replication(factor=2)"'
+        write_cmd = base_cmd % ('write', 'TWO', duration, client_count,
                                 cluster_ips)
 
         retries = 20
@@ -208,10 +208,10 @@ def run(argv):
 
         # Initiate Subprocess Call (READ/QUERY OPERATION)
         if not user_queries:
-            query_cmd = base_cmd % ('read', duration, client_count,
+            query_cmd = base_cmd % ('read', 'LOCAL_ONE', duration, client_count,
                                     cluster_ips)
         else:
-            query_cmd = base_cmd % ('user', duration, client_count,
+            query_cmd = base_cmd % ('user', 'LOCAL_ONE', duration, client_count,
                                     cluster_ips)
             query_cmd += 'profile=%s' % (stress_profile)
 
