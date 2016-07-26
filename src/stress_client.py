@@ -173,20 +173,30 @@ def run(argv):
                                         }
 
         # The cluster must be first populated by a 'write' test
-        base_cmd = 'cassandra-stress %s duration=%sm -rate threads=%s -node %s'
-        write_cmd = base_cmd % ('write', duration, client_count,
+        base_cmd = 'cassandra-stress %s cl=%s duration=%sm -rate threads=%s -node %s -schema "replication(factor=2)"'
+        write_cmd = base_cmd % ('write', 'TWO', duration, client_count,
                                 cluster_ips)
 
-        # Initiate Subprocess Call (WRITE OPERATION)
-        l.info('Execute command: %s' % (write_cmd))
-        stress_process = subprocess.Popen(write_cmd, stdout=subprocess.PIPE,
-                                          stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-        stdout_w, stderr_w = stress_process.communicate()
-        cmd_status_w = stress_process.returncode
-        if cmd_status_w != 0:
-            l.error('Error while running Cassandra-Stress WRITE Operation. Return Code: %s' % (cmd_status_w))
-        l.debug('Output of Cassandra-Stress Test WRITE operation: %s' % (stdout_w))
-        l.debug('stderr of Cassandra-Stress Test WRITE operation: %s' % (stderr_w))
+        retries = 20
+        while retries > 0:
+            # Initiate Subprocess Call (WRITE OPERATION)
+            l.info('Execute command: %s' % (write_cmd))
+            stress_process = subprocess.Popen(write_cmd, stdout=subprocess.PIPE,
+                                              stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+            stdout_w, stderr_w = stress_process.communicate()
+
+            cmd_status_w = stress_process.returncode
+            if cmd_status_w != 0:
+                l.error('Error while running Cassandra-Stress WRITE Operation. Return Code: %s' % (cmd_status_w))
+            l.debug('Output of Cassandra-Stress Test WRITE operation: %s' % (stdout_w))
+            l.debug('stderr of Cassandra-Stress Test WRITE operation: %s' % (stderr_w))
+
+            if 'NoHostAvailableException' in stderr_w:
+                retries = retries - 1
+                continue
+            else:
+                break
+
 
         # Write stats to 'run_data'
         hd.run_data['stats']['write']['time:end'] = json.dumps(time.time())
@@ -198,10 +208,10 @@ def run(argv):
 
         # Initiate Subprocess Call (READ/QUERY OPERATION)
         if not user_queries:
-            query_cmd = base_cmd % ('read', duration, client_count,
+            query_cmd = base_cmd % ('read', 'LOCAL_ONE', duration, client_count,
                                     cluster_ips)
         else:
-            query_cmd = base_cmd % ('user', duration, client_count,
+            query_cmd = base_cmd % ('user', 'LOCAL_ONE', duration, client_count,
                                     cluster_ips)
             query_cmd += 'profile=%s' % (stress_profile)
 
