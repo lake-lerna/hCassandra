@@ -213,7 +213,11 @@ class RunTestCassandra(HydraBase):
         l.info("Launching the Cassandra Stress Client(s). Total clients = %s" % (self.options.total_client_count))
         # Determine number of threads per Cassandra Stress Client
         if self.options.total_client_count > max_threads_per_client:
-            threads_per_client = max_threads_per_client
+            # Calculating the number of apps we need to scale to
+            client_count = math.ceil(self.options.total_client_count / float(max_threads_per_client))
+            # Calculating the suitable number of threads we need to run in an app
+            threads_per_client = int(math.ceil(self.options.total_client_count  / client_count))
+            
         else:
             threads_per_client = self.options.total_client_count
         l.debug("Number of Threads per Cassandra-Stress Client, set to: %s" % (threads_per_client))
@@ -226,7 +230,6 @@ class RunTestCassandra(HydraBase):
                                                                       self.options.profile),
                                cpus=0.2, mem=600, ports=[0])
         if self.options.total_client_count > max_threads_per_client:
-            client_count = math.ceil(self.options.total_client_count / max_threads_per_client)
             l.info("Number of Cassandra-Stress Clients to launch = %s" % (client_count))
             self.scale_and_verify_app(self.stress_client, client_count)
 
