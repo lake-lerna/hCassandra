@@ -152,7 +152,6 @@ class RunTestCassandra(HydraBase):
             l.debug("Connecting to Cassandra Cluster: [%s]" % (ips))
             session = cluster.connect()
             l.info("dropping [keyspace1] (default) keyspace...")
-            # session.execute("DROP KEYSPACE keyspace1")
             # Instead of 'dropping' the complete keyspace, let's delete all rows in Tables, so they remain created for subsequent tests
             session.execute("TRUNCATE keyspace1.counter1;")
             session.execute("TRUNCATE keyspace1.standard1;")
