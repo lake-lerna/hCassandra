@@ -1,4 +1,9 @@
+#!/usr/bin/env python
 __author__ = 'annyz'
+
+from sys import path
+# Append 'hydra' directory to Python path
+path.append("hydra/src/main/python")
 
 import logging
 import os
@@ -39,11 +44,15 @@ class HDCStressRepSrv(HDaemonRepSrv):
         """
         l.info('Scheduling Test to start %s.' % (start_time))
         start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f")
-        test_scheduler = BackgroundScheduler()
-        test_scheduler.add_job(lambda: time_to_start(self.run_data), next_run_time=start_time)
-        test_scheduler.start()
         self.run_data['test_status'] = 'running'
         self.run_data['stats']['msg_cnt'] = self.stress_metrics['ops_count']
+        # If time to start has passed, start immediately
+        if start_time < datetime.now():
+            time_to_start(self.run_data)
+        else:
+            test_scheduler = BackgroundScheduler()
+            test_scheduler.add_job(lambda: time_to_start(self.run_data), next_run_time=start_time)
+            test_scheduler.start()
         # Report Status
         return ('ok', None)
 
@@ -77,16 +86,44 @@ class HDCStressRepSrv(HDaemonRepSrv):
 
 def time_to_start(run_data):
     l.info('Starting Cassandra Stress Test at: %s' % (datetime.utcnow()))
-    process = psutil.Process()
     # Initialize test data collection
     run_data['start'] = True
-    run_data['stats']['write'] = {'net:start': json.dumps(psutil.net_io_counters()),
-                                  'cpu:start': json.dumps(process.cpu_times()),
-                                  'mem:start': json.dumps(process.memory_info()),
-                                  'time:start': json.dumps(time.time())
-                                  }
-    run_data['stats']['read'] = {}
     return
+
+
+def parse_results(stdout, run_data):
+    try:
+        l.info('Start parsing cassandra-stress output.')
+        index_start = stdout.find('op rate')
+        index_end = stdout.find('END')
+        if (index_start and index_end) != -1:
+            results = stdout[index_start:index_end]
+            # find 'matches' of the type att_name:value
+            matches = re.findall(r'.+\:{1}.+', results)
+            # partition each match at ':'
+            matches = [m.split(':', 1) for m in matches]
+            # Remove extra whitespaces
+            for pair in matches:
+                for idx, m in enumerate(pair):
+                    pair[idx] = re.sub(r'\s{2,}', '', m)
+            # Build dictionary of results
+            result_dict = dict(matches)
+            # Remove [] in results
+            for key, value in result_dict.iteritems():
+                result_dict[key] = re.sub(r'\[{1}.{1,}\]{1}', '', value)
+            run_data.update(result_dict)
+    except Exception, e:
+        l.error("ERROR while parsing Cassandra-Stress OUTPUT. Error: %s" % str(e))
+
+
+def check_user_queries(data_profile):
+    """
+    Check if 'user' queries are defined in YAML Profile.
+    :param data_profile: .yaml profile
+    :return: True if custom user queries are defined in profile, otherwise, False
+    """
+    # TODO: Analyze 'profile' and set 'user_queries'
+    return False
 
 
 def run(argv):
@@ -97,13 +134,14 @@ def run(argv):
     user_queries = False
 
     # Parse Inputs
-    if len(argv) > 5:
+    if len(argv) >= 6:
         ops_count = argv[1]             # number of Operations (e.g., n=1000000 insert/read one million rows)
         client_count = argv[2]          # client count (client threads)
         cluster_ips = argv[3]           # C*-Cluster IPs
-        # consistency_level = argv[4]     # consistency level, default='LOCAL_ONE'
-    if len(argv) > 6:
-        stress_profile = argv[4]        # (optional) .yaml profile (defines data model & queries)
+        duration = argv[4]
+        consistency_level = argv[5]     # consistency level, default='LOCAL_ONE'
+    if len(argv) >= 7:
+        stress_profile = argv[6]        # (optional) .yaml profile (defines data model & queries)
         user_queries = check_user_queries(stress_profile)
 
     # Initialize 'run_data'
@@ -127,42 +165,57 @@ def run(argv):
             continue
         l.info("START SIGNAL received. Cassandra Client initiating Stress Test...")
 
+        process = psutil.Process()
+        hd.run_data['stats']['write'] = {'net:start': json.dumps(psutil.net_io_counters()),
+                                         'cpu:start': json.dumps(process.cpu_times()),
+                                         'mem:start': json.dumps(process.memory_info()),
+                                         'time:start': json.dumps(time.time())
+                                        }
+
         # The cluster must be first populated by a 'write' test
-        w_start_time = time.time()              # write 'start' time
-        base_cmd = 'cassandra-stress %s n=%s -rate threads=%s -node %s'
-        write_cmd = base_cmd % ('write', ops_count, client_count,
+        base_cmd = 'cassandra-stress %s cl=%s duration=%sm -rate threads=%s -node %s -schema "replication(factor=2)"'
+        write_cmd = base_cmd % ('write', 'QUORUM', duration, client_count,
                                 cluster_ips)
 
-        # Initiate Subprocess Call (WRITE OPERATION)
-        l.info('Execute command: %s' % (write_cmd))
-        stress_process = subprocess.Popen(write_cmd, stdout=subprocess.PIPE,
-                                          stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-        stdout_w, stderr_w = stress_process.communicate()
-        cmd_status_w = stress_process.returncode
-        if cmd_status_w != 0:
-            l.error('Error while running Cassandra-Stress WRITE Operation. Return Code: %s' % (cmd_status_w))
-        l.debug('Output of Cassandra-Stress Test WRITE operation: %s' % (stdout_w))
-        l.debug('stderr of Cassandra-Stress Test WRITE operation: %s' % (stderr_w))
+        retries = 20
+        while retries > 0:
+            # Initiate Subprocess Call (WRITE OPERATION)
+            l.info('Execute command: %s' % (write_cmd))
+            stress_process = subprocess.Popen(write_cmd, stdout=subprocess.PIPE,
+                                              stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+            stdout_w, stderr_w = stress_process.communicate()
+
+            cmd_status_w = stress_process.returncode
+            if cmd_status_w != 0:
+                l.error('Error while running Cassandra-Stress WRITE Operation. Return Code: %s' % (cmd_status_w))
+            l.debug('Output of Cassandra-Stress Test WRITE operation: %s' % (stdout_w))
+            l.debug('stderr of Cassandra-Stress Test WRITE operation: %s' % (stderr_w))
+
+            if 'NoHostAvailableException' in stderr_w:
+                retries = retries - 1
+                continue
+            else:
+                break
+
 
         # Write stats to 'run_data'
-        hd.run_data['stats']['write']['time:start'] = json.dumps(w_start_time)
         hd.run_data['stats']['write']['time:end'] = json.dumps(time.time())
-        parse_results(stdout_w, hd.run_data['stats']['write'])
-        l.debug("Updated RUN_DATA: \n%s" % pformat(hd.run_data))
-        process = psutil.Process()
         hd.run_data['stats']['write']['net:end'] = json.dumps(psutil.net_io_counters())
         hd.run_data['stats']['write']['cpu:end'] = json.dumps(process.cpu_times())
         hd.run_data['stats']['write']['mem:end'] = json.dumps(process.memory_info())
+        parse_results(stdout_w, hd.run_data['stats']['write'])
+        l.debug("Updated RUN_DATA: \n%s" % pformat(hd.run_data))
 
         # Initiate Subprocess Call (READ/QUERY OPERATION)
         if not user_queries:
-            query_cmd = base_cmd % ('read', ops_count, client_count,
+            query_cmd = base_cmd % ('read', 'ONE', duration, client_count,
                                     cluster_ips)
         else:
-            query_cmd = base_cmd % ('user', ops_count, client_count,
+            query_cmd = base_cmd % ('user', 'ONE', duration, client_count,
                                     cluster_ips)
             query_cmd += 'profile=%s' % (stress_profile)
 
+        hd.run_data['stats']['read'] = {}
         q_start_time = time.time()
         l.debug('Execute command: %s' % (query_cmd))
         stress_process = subprocess.Popen(query_cmd, stdout=subprocess.PIPE,
@@ -177,10 +230,10 @@ def run(argv):
         # Write stats to 'run_data'
         hd.run_data['stats']['read']['time:start'] = json.dumps(q_start_time)
         hd.run_data['stats']['read']['time:end'] = json.dumps(time.time())
-        parse_results(stdout_q, hd.run_data['stats']['read'])
         hd.run_data['stats']['read']['net:end'] = json.dumps(psutil.net_io_counters())
         hd.run_data['stats']['read']['cpu:end'] = json.dumps(process.cpu_times())
         hd.run_data['stats']['read']['mem:end'] = json.dumps(process.memory_info())
+        parse_results(stdout_q, hd.run_data['stats']['read'])
         hd.run_data['test_status'] = 'stopping'
         hd.run_data['start'] = False
         hd.run_data['msg_cnt'] = ops_count
@@ -189,35 +242,3 @@ def run(argv):
 
 if __name__ == "__main__":
     run(sys.argv)
-
-
-def parse_results(stdout, run_data):
-    try:
-        l.info('Start parsing cassandra-stress output.')
-        index_start = stdout.find('op rate')
-        index_end = stdout.find('END')
-        if (index_start and index_end) != -1:
-            results = stdout[index_start:index_end]
-            # find 'matches' of the type att_name:value
-            matches = re.findall(r'.+\:{1}.+', results)
-            # partition each match at ':'
-            matches = [m.split(':', 1) for m in matches]
-            # Remove extra whitespaces
-            for pair in matches:
-                for idx, m in enumerate(pair):
-                    pair[idx] = re.sub(r'\s{2,}', '', m)
-            # Build dictionary of results
-            result_dict = dict(matches)
-            run_data.update(result_dict)
-    except Exception, e:
-        l.error("ERROR while parsing Cassandra-Stress OUTPUT. Error: %s" % str(e))
-
-
-def check_user_queries(data_profile):
-    """
-    Check if 'user' queries are defined in YAML Profile.
-    :param data_profile: .yaml profile
-    :return: True if custom user queries are defined in profile, otherwise, False
-    """
-    # TODO: Analyze 'profile' and set 'user_queries'
-    return False
