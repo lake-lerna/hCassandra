@@ -88,7 +88,7 @@ class RunTestCassandra(HydraBase):
     def run_test(self, first_run=True):
         # Get Mesos/Marathon Clients
         self.start_init()
-        # Reset (drop) Cassandra DB for cassandra-stress tool default 'keyspace'
+        # Reset (drop) Cassandra DB for cassandra-stress tool default 'keyspace1'
         self.reset_db()
         # Create Table(s) & Triggers for stress Test
         # self.create_triggers()
@@ -152,7 +152,9 @@ class RunTestCassandra(HydraBase):
             l.debug("Connecting to Cassandra Cluster: [%s]" % (ips))
             session = cluster.connect()
             l.info("dropping [keyspace1] (default) keyspace...")
-            session.execute("DROP KEYSPACE keyspace1")
+            # Instead of 'dropping' the complete keyspace, let's delete all rows in Tables, so they remain created for subsequent tests
+            session.execute("TRUNCATE keyspace1.counter1;")
+            session.execute("TRUNCATE keyspace1.standard1;")
             l.info('Succeeded to delete DB.')
         except Exception as e:
             l.error('Failed to reset Cassandra DB. Error: %s' % str(e))
